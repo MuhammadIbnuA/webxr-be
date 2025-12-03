@@ -227,10 +227,10 @@ async function withSpeech(session, messageObj) {
           base64: audio.base64,
         }
       : {
-          enabled: false,
-          mimeType: null,
-          base64: null,
-        },
+        enabled: false,
+        mimeType: null,
+        base64: null,
+      },
   };
 }
 
@@ -314,6 +314,80 @@ Huruf rapi, paragraf tidak terlalu panjang.
   };
 }
 
+/**
+ * Bangun kalimat tanya + pembacaan opsi secara dinamis untuk state yang punya options.
+ * mode: "topic" | "problem"
+ */
+async function buildSpokenOptionsPrompt({ mode, topic, round, options, previousCount }) {
+  const simpleOptions = options.map((o) => ({
+    id: o.id,
+    label: o.label,
+    description: o.description,
+  }));
+
+  let context = "";
+  if (mode === "topic") {
+    context = `
+Ini adalah tahap pemilihan area kedamaian awal.
+Siswa akan memilih salah satu area berikut sebagai fokus utama sesi:
+- Damai dengan Diri
+- Damai dengan Sosial
+- Damai dengan Alam
+`;
+  } else if (mode === "problem") {
+    context = `
+Ini adalah tahap penggalian masalah untuk topik "${topic?.label}".
+Saat ini sudah ada ${previousCount || 0} masalah yang dipilih.
+Sekarang konselor ingin menanyakan lagi, dari beberapa pilihan berikut, mana yang juga terasa dekat dengan kondisinya.
+Round: ${round}.
+`;
+  }
+
+  const prompt = `
+Kamu adalah konselor sekolah yang empatik dan berbahasa Indonesia halus.
+
+Konteks:
+${context}
+
+Berikut daftar opsi dalam bentuk JSON:
+${JSON.stringify(simpleOptions, null, 2)}
+
+TUGAS:
+- Buat satu teks yang akan DIBACAKAN dengan suara.
+- Gaya: lembut, Islami, nada tanya, seolah konselor sedang mengajak siswa merenung.
+- Sertakan pembukaan singkat yang hangat.
+- BACAKAN setiap opsi secara alami, misalnya:
+  "Kalau kamu lebih banyak merasa ..., itu biasanya masuk ke pilihan ...."
+  "Kalau yang terasa mengganggu adalah ..., maka itu termasuk ...."
+- Akhiri dengan pertanyaan yang jelas, misalnya:
+  "Menurutmu, dari semua pilihan tadi, mana yang paling terasa dekat denganmu sekarang?"
+- Jangan sebut kata 'JSON', 'opsi', 'id', atau istilah teknis.
+- Jangan menyuruh klik tombol, cukup pakai bahasa umum seperti "pilihan", "yang pertama", "yang kedua", dll.
+- Jangan menyebut diri sebagai AI atau sistem.
+
+Kembalikan HANYA teks yang akan dibacakan, tanpa penjelasan tambahan.
+`;
+
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Kamu adalah konselor sekolah yang empatik, Islami, dan berbahasa Indonesia yang halus.",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.7,
+  });
+
+  const text =
+    completion.choices?.[0]?.message?.content?.trim() ||
+    "Dari beberapa pilihan yang tersedia, silakan pilih mana yang paling terasa dekat denganmu saat ini.";
+
+  return text;
+}
+
 // ====== STATE HANDLERS ======
 
 async function handleGreeting(session) {
@@ -321,13 +395,45 @@ async function handleGreeting(session) {
   session.topicId = null;
   session.selectedProblems = [];
 
+  // Greeting FULLY dinamis dari Groq, sekaligus menyebut 3 topik
+  const prompt = `
+Buat satu pesan pembuka konseling untuk siswa SMA dalam bahasa Indonesia yang lembut, Islami, dan menenangkan.
+
+Syarat:
+- Mulai dengan salam "Assalamualaikum".
+- Jelaskan bahwa ini adalah ruang aman untuk bercerita dan relaksasi.
+- Sebutkan secara eksplisit tiga area yang bisa dipilih:
+  1) "Damai dengan Diri"
+  2) "Damai dengan Sosial"
+  3) "Damai dengan Alam"
+- Ajak siswa untuk memilih salah satu area yang paling ingin ia fokuskan terlebih dahulu.
+- Gaya bahasa seperti konselor sekolah yang hangat dan tidak menggurui.
+- Jangan sebut diri sebagai AI atau sistem.
+- Teks 1–3 paragraf pendek, mudah dibacakan dengan suara pelan.
+`;
+
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Kamu adalah konselor sekolah yang empatik, Islami, dan berbahasa Indonesia yang halus.",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.7,
+  });
+
+  const greetingMessage =
+    completion.choices?.[0]?.message?.content?.trim() ||
+    "Assalamualaikum, terima kasih sudah datang. Di sini kamu boleh bercerita dengan tenang. Silakan pilih area yang ingin kamu fokuskan: Damai dengan Diri, Damai dengan Sosial, atau Damai dengan Alam.";
+
   const message = {
     currentState: "identify_topic",
     type: "topic_selection",
-    message:
-      "Halo, terima kasih sudah datang. Di sini kamu boleh bercerita dengan tenang. Kita mulai dengan memilih area kedamaian yang ingin kamu fokuskan dulu ya.",
-    speechText:
-      "Halo, terima kasih sudah datang. Di sini kamu aman untuk bercerita. Kita mulai dengan memilih area kedamaian yang ingin kamu fokuskan dulu.",
+    message: greetingMessage,
+    speechText: greetingMessage,
     options: topicToOptions(),
   };
 
@@ -336,34 +442,51 @@ async function handleGreeting(session) {
 
 async function handleIdentifyTopic(session, payload) {
   const { topicId } = payload || {};
+
+  // Kalau belum ada / salah → tanya ulang pakai gaya dinamis + opsi dibacakan
   if (!topicId || !TOPICS[topicId]) {
+    const options = topicToOptions();
+    const spoken = await buildSpokenOptionsPrompt({
+      mode: "topic",
+      options,
+      round: null,
+      topic: null,
+      previousCount: 0,
+    });
+
     const msg = {
       currentState: "identify_topic",
       type: "topic_selection",
-      message:
-        "Maaf, aku belum menangkap pilihanmu. Silakan pilih salah satu: Damai dengan Diri, Damai dengan Sosial, atau Damai dengan Alam.",
-      speechText:
-        "Maaf, aku belum menangkap pilihanmu. Silakan pilih salah satu area yang paling ingin kamu fokuskan dulu.",
-      options: topicToOptions(),
+      message: spoken,
+      speechText: spoken,
+      options,
     };
     return withSpeech(session, msg);
   }
 
+  // kalau valid → set topic dan lanjut ke collecting_problem (round 1)
   session.topicId = topicId;
   session.selectedProblems = [];
   session.state = "collecting_problem";
 
   const options = buildProblemOptions(topicId, []);
-
   const round = 1;
   const topic = TOPICS[topicId];
+
+  const spoken = await buildSpokenOptionsPrompt({
+    mode: "problem",
+    topic,
+    round,
+    options,
+    previousCount: 0,
+  });
 
   const message = {
     currentState: "collecting_problem",
     type: "problem_selection",
     round,
-    message: `Baik, kita akan fokus pada area "${topic.label}". Dari beberapa hal berikut, mana yang paling terasa dekat dengan kondisimu saat ini?`,
-    speechText: `Baik, kita akan fokus pada area ${topic.label}. Dari beberapa hal yang akan aku sebutkan, pilih satu yang paling terasa dekat dengan kondisimu saat ini.`,
+    message: spoken,
+    speechText: spoken,
     options,
   };
 
@@ -382,16 +505,24 @@ async function handleCollectingProblem(session, payload) {
   const topic = TOPICS[topicId];
   const validProblem = topic.problems.find((p) => p.id === problemId);
 
+  // Kalau problemId tidak valid → bacakan ulang opsi yang tersedia dengan nada tanya
   if (!validProblem) {
+    const options = buildProblemOptions(topicId, selectedProblems);
+    const spoken = await buildSpokenOptionsPrompt({
+      mode: "problem",
+      topic,
+      round: (selectedProblems.length || 0) + 1,
+      options,
+      previousCount: selectedProblems.length || 0,
+    });
+
     const message = {
       currentState: "collecting_problem",
       type: "problem_selection",
-      round: selectedProblems.length + 1 || 1,
-      message:
-        "Maaf, aku belum bisa mengenali pilihan itu. Silakan pilih salah satu dari daftar yang ada di tombol ya.",
-      speechText:
-        "Maaf, aku belum bisa mengenali pilihan itu. Silakan pilih salah satu dari daftar yang ada.",
-      options: buildProblemOptions(topicId, selectedProblems),
+      round: (selectedProblems.length || 0) + 1,
+      message: spoken,
+      speechText: spoken,
+      options,
     };
     return withSpeech(session, message);
   }
@@ -400,19 +531,25 @@ async function handleCollectingProblem(session, payload) {
     selectedProblems.push(problemId);
   }
 
-  // Kalau belum 3 problem, lanjut round berikutnya
+  // Kalau belum 3 problem → lanjut round berikutnya, dengan prompt dinamis
   if (selectedProblems.length < 3) {
     const round = selectedProblems.length + 1;
     const options = buildProblemOptions(topicId, selectedProblems);
+
+    const spoken = await buildSpokenOptionsPrompt({
+      mode: "problem",
+      topic,
+      round,
+      options,
+      previousCount: selectedProblems.length,
+    });
 
     const message = {
       currentState: "collecting_problem",
       type: "problem_selection",
       round,
-      message:
-        "Terima kasih, aku sudah mencatat. Dari beberapa hal berikut, adakah yang juga terasa menggambarkan kondisimu? Pilih satu lagi ya.",
-      speechText:
-        "Terima kasih, aku sudah mencatat. Sekarang, dari beberapa hal berikut, pilih satu lagi yang juga terasa menggambarkan kondisimu.",
+      message: spoken,
+      speechText: spoken,
       options,
     };
 
@@ -446,6 +583,50 @@ async function handleCollectingProblem(session, payload) {
   return withSpeech(session, message);
 }
 
+// OPTIONAL: restart session dengan topik yang sama
+async function handleRestartSession(session, payload) {
+  const keepTopic = payload?.keepTopic ?? true;
+
+  if (!keepTopic) {
+    // mulai benar-benar baru
+    session.state = "greeting";
+    session.topicId = null;
+    session.selectedProblems = [];
+    return handleGreeting(session);
+  }
+
+  // restart dari awal collecting_problem dengan topic lama
+  if (!session.topicId || !TOPICS[session.topicId]) {
+    session.state = "identify_topic";
+    return handleIdentifyTopic(session, {});
+  }
+
+  session.selectedProblems = [];
+  session.state = "collecting_problem";
+
+  const options = buildProblemOptions(session.topicId, []);
+  const topic = TOPICS[session.topicId];
+
+  const spoken = await buildSpokenOptionsPrompt({
+    mode: "problem",
+    topic,
+    round: 1,
+    options,
+    previousCount: 0,
+  });
+
+  const message = {
+    currentState: "collecting_problem",
+    type: "problem_selection",
+    round: 1,
+    message: spoken,
+    speechText: spoken,
+    options,
+  };
+
+  return withSpeech(session, message);
+}
+
 // ====== ROUTES ======
 
 app.get("/health", (_, res) => {
@@ -473,7 +654,7 @@ app.post("/chat", async (req, res) => {
         response = await handleCollectingProblem(session, payload);
         break;
       case "story":
-        // replay last story if needed (simple behavior)
+        // replay simple info
         response = {
           sessionId: session.id,
           currentState: "story",
@@ -485,7 +666,6 @@ app.post("/chat", async (req, res) => {
         response = await withSpeech(session, response);
         break;
       case "restart_session":
-        // Restart ke problem selection dengan topik yang sama
         response = await handleRestartSession(session, payload);
         break;
       default:

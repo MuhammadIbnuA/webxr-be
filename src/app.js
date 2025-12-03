@@ -484,6 +484,10 @@ app.post("/chat", async (req, res) => {
         };
         response = await withSpeech(session, response);
         break;
+      case "restart_session":
+        // Restart ke problem selection dengan topik yang sama
+        response = await handleRestartSession(session, payload);
+        break;
       default:
         session.state = "greeting";
         response = await handleGreeting(session);

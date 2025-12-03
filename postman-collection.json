@@ -1,0 +1,220 @@
+{
+  "info": {
+    "name": "WebXR Konseling AI API",
+    "description": "API untuk aplikasi konseling berbasis WebXR dengan cerita Kiai Ahmad Dahlan.\n\nBase URL: https://webxr-be.vercel.app\n\n## Flow Aplikasi:\n1. **Greeting** - Memulai sesi baru\n2. **Identify Topic** - Memilih topik (diri/sosial/alam)\n3. **Collecting Problem** - Memilih 3 masalah yang relevan\n4. **Story** - Mendapatkan cerita relaksasi yang dipersonalisasi\n\n## Session Management:\n- SessionId dikembalikan dari response pertama\n- Gunakan sessionId yang sama untuk request selanjutnya",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://webxr-be.vercel.app",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        },
+        "description": "Cek status server"
+      },
+      "response": [
+        {
+          "name": "Success",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"status\": \"ok\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "1. Start Session (Greeting)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.sessionId) {",
+              "    pm.collectionVariables.set('sessionId', jsonData.sessionId);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": null,\n  \"state\": \"greeting\",\n  \"payload\": {}\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/chat",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat"]
+        },
+        "description": "Memulai sesi konseling baru.\n\n**Request:**\n- `sessionId`: null (sesi baru)\n- `state`: \"greeting\"\n- `payload`: {} (kosong)\n\n**Response:**\n- `sessionId`: ID sesi yang baru dibuat\n- `currentState`: \"identify_topic\"\n- `type`: \"topic_selection\"\n- `message`: Pesan sapaan dari konselor\n- `options`: Array pilihan topik (diri, sosial, alam)\n- `audio`: Object audio TTS (base64)"
+      },
+      "response": [
+        {
+          "name": "Success - Topic Selection",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"sessionId\": \"abc123-uuid\",\n  \"currentState\": \"identify_topic\",\n  \"type\": \"topic_selection\",\n  \"message\": \"Halo, terima kasih sudah datang. Di sini kamu boleh bercerita dengan tenang. Kita mulai dengan memilih area kedamaian yang ingin kamu fokuskan dulu ya.\",\n  \"speechText\": \"Halo, terima kasih sudah datang...\",\n  \"options\": [\n    {\n      \"id\": \"diri\",\n      \"label\": \"Damai dengan Diri\",\n      \"description\": \"Ketenangan batin, penerimaan diri, keseimbangan emosi, dan kemampuan mengelola stres.\"\n    },\n    {\n      \"id\": \"sosial\",\n      \"label\": \"Damai dengan Sosial\",\n      \"description\": \"Kemampuan hidup rukun, menghargai perbedaan, dan berempati dalam interaksi sosial.\"\n    },\n    {\n      \"id\": \"alam\",\n      \"label\": \"Damai dengan Alam\",\n      \"description\": \"Hubungan harmonis dengan lingkungan hidup, kepedulian, dan perilaku ramah lingkungan.\"\n    }\n  ],\n  \"audio\": {\n    \"enabled\": true,\n    \"mimeType\": \"audio/mpeg\",\n    \"base64\": \"//uQxAAAAAANIAAAAAExBTUUzLjEwMFVVVVVV...\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "2. Select Topic (Identify Topic)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.sessionId) {",
+              "    pm.collectionVariables.set('sessionId', jsonData.sessionId);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"identify_topic\",\n  \"payload\": {\n    \"topicId\": \"diri\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/chat",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat"]
+        },
+        "description": "Memilih topik/area kedamaian.\n\n**Request:**\n- `sessionId`: ID sesi dari response sebelumnya\n- `state`: \"identify_topic\"\n- `payload.topicId`: \"diri\" | \"sosial\" | \"alam\"\n\n**Response:**\n- `currentState`: \"collecting_problem\"\n- `type`: \"problem_selection\"\n- `round`: 1 (round pertama dari 3)\n- `options`: Array pilihan masalah sesuai topik"
+      },
+      "response": [
+        {
+          "name": "Success - Problem Selection Round 1",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"sessionId\": \"abc123-uuid\",\n  \"currentState\": \"collecting_problem\",\n  \"type\": \"problem_selection\",\n  \"round\": 1,\n  \"message\": \"Baik, kita akan fokus pada area \\\"Damai dengan Diri\\\". Dari beberapa hal berikut, mana yang paling terasa dekat dengan kondisimu saat ini?\",\n  \"options\": [\n    {\n      \"id\": \"tekanan_kecemasan_akademik\",\n      \"label\": \"Tekanan dan kecemasan akademik\",\n      \"description\": \"Merasa tertekan oleh tugas, nilai, dan persaingan sehingga muncul cemas, tidak percaya diri, dan stres.\"\n    },\n    {\n      \"id\": \"krisis_identitas_arah_hidup\",\n      \"label\": \"Krisis identitas dan arah hidup\",\n      \"description\": \"Bingung menemukan jati diri, minat, dan tujuan hidup sehingga merasa kosong atau tersesat.\"\n    },\n    {\n      \"id\": \"kesehatan_mental_belum_tertangani\",\n      \"label\": \"Kesehatan mental yang belum tertangani\",\n      \"description\": \"Belum terlalu peduli kesehatan mental dan masih ada rasa malu atau stigma untuk mencari bantuan.\"\n    },\n    {\n      \"id\": \"paparan_media_sosial\",\n      \"label\": \"Paparan media sosial\",\n      \"description\": \"Sering membandingkan diri dengan orang lain di media sosial dan merasa tidak cukup atau kurang berharga.\"\n    },\n    {\n      \"id\": \"kehilangan_spiritualitas\",\n      \"label\": \"Kehilangan spiritualitas\",\n      \"description\": \"Merasa ibadah menurun, jauh dari nilai-nilai spiritual, atau sulit merasakan kedekatan dengan Tuhan.\"\n    }\n  ],\n  \"audio\": {\n    \"enabled\": true,\n    \"mimeType\": \"audio/mpeg\",\n    \"base64\": \"//uQxAAAAAANIAAAAAExBTUUzLjEwMFVVVVVV...\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "3a. Select Problem - Round 1",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"collecting_problem\",\n  \"payload\": {\n    \"problemId\": \"tekanan_kecemasan_akademik\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/chat",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat"]
+        },
+        "description": "Memilih masalah pertama.\n\n**Request:**\n- `sessionId`: ID sesi\n- `state`: \"collecting_problem\"\n- `payload.problemId`: ID masalah yang dipilih\n\n**Response:**\n- `round`: 2 (lanjut ke round berikutnya)\n- `options`: Masalah yang tersisa (yang belum dipilih)"
+      },
+      "response": [
+        {
+          "name": "Success - Problem Selection Round 2",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"sessionId\": \"abc123-uuid\",\n  \"currentState\": \"collecting_problem\",\n  \"type\": \"problem_selection\",\n  \"round\": 2,\n  \"message\": \"Terima kasih, aku sudah mencatat. Dari beberapa hal berikut, adakah yang juga terasa menggambarkan kondisimu? Pilih satu lagi ya.\",\n  \"options\": [\n    {\n      \"id\": \"krisis_identitas_arah_hidup\",\n      \"label\": \"Krisis identitas dan arah hidup\",\n      \"description\": \"Bingung menemukan jati diri...\"\n    }\n  ],\n  \"audio\": { \"enabled\": true, \"mimeType\": \"audio/mpeg\", \"base64\": \"...\" }\n}"
+        }
+      ]
+    },
+    {
+      "name": "3b. Select Problem - Round 2",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"collecting_problem\",\n  \"payload\": {\n    \"problemId\": \"krisis_identitas_arah_hidup\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/chat",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat"]
+        },
+        "description": "Memilih masalah kedua."
+      },
+      "response": [
+        {
+          "name": "Success - Problem Selection Round 3",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"sessionId\": \"abc123-uuid\",\n  \"currentState\": \"collecting_problem\",\n  \"type\": \"problem_selection\",\n  \"round\": 3,\n  \"message\": \"Terima kasih, aku sudah mencatat...\",\n  \"options\": [...],\n  \"audio\": { \"enabled\": true, \"mimeType\": \"audio/mpeg\", \"base64\": \"...\" }\n}"
+        }
+      ]
+    },
+    {
+      "name": "3c. Select Problem - Round 3 (Final)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"collecting_problem\",\n  \"payload\": {\n    \"problemId\": \"paparan_media_sosial\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/chat",
+          "host": ["{{baseUrl}}"],
+          "path": ["chat"]
+        },
+        "description": "Memilih masalah ketiga (terakhir).\n\nSetelah memilih 3 masalah, backend akan generate cerita relaksasi yang dipersonalisasi menggunakan Groq AI.\n\n**Response:**\n- `currentState`: \"story\"\n- `type`: \"story\"\n- `storyText`: Cerita relaksasi yang dipersonalisasi\n- `baseStoryMeta`: Metadata cerita dasar Kiai Dahlan\n- `selectedProblems`: Array 3 masalah yang dipilih"
+      },
+      "response": [
+        {
+          "name": "Success - Story Generated",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"sessionId\": \"abc123-uuid\",\n  \"currentState\": \"story\",\n  \"type\": \"story\",\n  \"storyText\": \"Baik, sekarang silakan Anda duduk dengan nyaman… tarik napas perlahan… dan lepaskan… izinkan tubuh dan pikiran Anda mulai rileks...\\n\\nDalam keheningan itu, hadir sebuah kisah tentang Kiai Ahmad Dahlan dan biolanya...\\n\\n[Cerita yang dipersonalisasi berdasarkan 3 masalah yang dipilih]\\n\\nSaat Anda menghembuskan napas, lepaskan hal-hal yang terasa berat. Saat Anda menarik napas, izinkan keikhlasan itu masuk, menghangatkan, dan menenangkan hati Anda.\",\n  \"speechText\": \"Baik, sekarang silakan Anda duduk dengan nyaman...\",\n  \"baseStoryMeta\": {\n    \"id\": \"biola_ikhlas\",\n    \"title\": \"Biola Kiai Dahlan Memberi Jawaban (Ikhlas)\"\n  },\n  \"selectedProblems\": [\n    {\n      \"id\": \"tekanan_kecemasan_akademik\",\n      \"title\": \"Tekanan dan kecemasan akademik\",\n      \"detail\": \"Merasa tertekan oleh tugas, nilai, dan persaingan...\"\n    },\n    {\n      \"id\": \"krisis_identitas_arah_hidup\",\n      \"title\": \"Krisis identitas dan arah hidup\",\n      \"detail\": \"Bingung menemukan jati diri...\"\n    },\n    {\n      \"id\": \"paparan_media_sosial\",\n      \"title\": \"Paparan media sosial\",\n      \"detail\": \"Sering membandingkan diri dengan orang lain...\"\n    }\n  ],\n  \"audio\": {\n    \"enabled\": true,\n    \"mimeType\": \"audio/mpeg\",\n    \"base64\": \"//uQxAAAAAANIAAAAAExBTUUzLjEwMFVVVVVV...\"\n  }\n}"
+        }
+      ]
+    }
+  ]
+}

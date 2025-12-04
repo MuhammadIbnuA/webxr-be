@@ -4,7 +4,17 @@ const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
 const Groq = require("groq-sdk");
-const { synthesizeSpeech } = require("./tts"); // TTS via ElevenLabs
+const { synthesizeSpeech } = require("./tts");
+
+// PROMPTS
+const { getGreetingPrompt } = require("../prompts/greetingprompt");
+const { getOptionsPrompt } = require("../prompts/optionsprompt");
+const { getStoryPrompt } = require("../prompts/storyprompt");
+const { getOptionRewritePrompt } = require("../prompts/optionrewriteprompt");
+
+// DATA
+const { TOPICS } = require("../data/topics");
+const { pickBaseStoryForTopic } = require("../data/baseStories");
 
 // ====== INIT ======
 const app = express();
@@ -20,166 +30,24 @@ const groq = new Groq({
 
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-70b-versatile";
 
-// ====== DATA: TOPICS & PROBLEMS ======
-
-const TOPICS = {
-  diri: {
-    id: "diri",
-    label: "Damai dengan Diri",
-    description:
-      "Ketenangan batin, penerimaan diri, keseimbangan emosi, dan kemampuan mengelola stres.",
-    problems: [
-      {
-        id: "tekanan_kecemasan_akademik",
-        title: "Tekanan dan kecemasan akademik",
-        detail:
-          "Merasa tertekan oleh tugas, nilai, dan persaingan sehingga muncul cemas, tidak percaya diri, dan stres.",
-      },
-      {
-        id: "krisis_identitas_arah_hidup",
-        title: "Krisis identitas dan arah hidup",
-        detail:
-          "Bingung menemukan jati diri, minat, dan tujuan hidup sehingga merasa kosong atau tersesat.",
-      },
-      {
-        id: "kesehatan_mental_belum_tertangani",
-        title: "Kesehatan mental yang belum tertangani",
-        detail:
-          "Belum terlalu peduli kesehatan mental dan masih ada rasa malu atau stigma untuk mencari bantuan.",
-      },
-      {
-        id: "paparan_media_sosial",
-        title: "Paparan media sosial",
-        detail:
-          "Sering membandingkan diri dengan orang lain di media sosial dan merasa tidak cukup atau kurang berharga.",
-      },
-      {
-        id: "kehilangan_spiritualitas",
-        title: "Kehilangan spiritualitas",
-        detail:
-          "Merasa ibadah menurun, jauh dari nilai-nilai spiritual, atau sulit merasakan kedekatan dengan Tuhan.",
-      },
-    ],
-  },
-  sosial: {
-    id: "sosial",
-    label: "Damai dengan Sosial",
-    description:
-      "Kemampuan hidup rukun, menghargai perbedaan, dan berempati dalam interaksi sosial.",
-    problems: [
-      {
-        id: "intoleransi_stereotip",
-        title: "Intoleransi dan stereotip",
-        detail:
-          "Ada gesekan atau jarak dengan teman yang berbeda suku, agama, atau latar belakang.",
-      },
-      {
-        id: "bullying_perundungan_digital",
-        title: "Bullying dan perundungan digital",
-        detail:
-          "Pernah mengalami atau menyaksikan perundungan, baik secara langsung maupun di media sosial.",
-      },
-      {
-        id: "kurang_empati_komunikasi",
-        title: "Kurangnya empati dan komunikasi sehat",
-        detail:
-          "Sering terjadi konflik kecil, salah paham, atau sulit menyampaikan perasaan dengan cara yang baik.",
-      },
-      {
-        id: "kesenjangan_sosial_ekonomi",
-        title: "Kesenjangan sosial dan ekonomi",
-        detail:
-          "Merasa minder atau justru superior karena perbedaan kondisi ekonomi dengan teman sebaya.",
-      },
-      {
-        id: "budaya_kompetitif_ego",
-        title: "Budaya kompetitif dan egosentris",
-        detail:
-          "Merasa lingkungan terlalu kompetitif sehingga nilai kebersamaan dan gotong royong berkurang.",
-      },
-    ],
-  },
-  alam: {
-    id: "alam",
-    label: "Damai dengan Alam",
-    description:
-      "Hubungan harmonis dengan lingkungan hidup, kepedulian, dan perilaku ramah lingkungan.",
-    problems: [
-      {
-        id: "rendah_kesadaran_ekologis",
-        title: "Menurunnya kesadaran ekologis",
-        detail:
-          "Kurang peduli isu lingkungan seperti sampah, air, dan energi karena terasa jauh dari kehidupan sehari-hari.",
-      },
-      {
-        id: "konsumtivisme_tidak_ramah_lingkungan",
-        title: "Konsumtivisme dan perilaku tidak ramah lingkungan",
-        detail:
-          "Sering memakai barang sekali pakai, plastik, atau membuang makanan tanpa banyak dipikir.",
-      },
-      {
-        id: "minim_praktik_cinta_lingkungan",
-        title: "Minimnya praktik cinta lingkungan di sekolah",
-        detail:
-          "Program penghijauan, daur ulang, atau konservasi berjalan sesaat saja, belum jadi kebiasaan.",
-      },
-      {
-        id: "urbanisasi_alienasi_alam",
-        title: "Urbanisasi dan alienasi dari alam",
-        detail:
-          "Jarang berinteraksi dengan alam sehingga merasa jauh dan kurang empati pada kerusakan lingkungan.",
-      },
-    ],
+// ====== GLOBAL TTS CONFIG (ADMIN-LEVEL) ======
+/**
+ * mode:
+ *  - "elevenlabs" → backend generate audio via ElevenLabs (tts.js)
+ *  - "webspeech"  → backend hanya kirim text, frontend pakai Web Speech API
+ *  - "off"        → tidak ada audio, hanya text
+ */
+let TTS_CONFIG = {
+  mode: process.env.DEFAULT_TTS_MODE || "elevenlabs",
+  webSpeechConfig: {
+    lang: "id-ID",
+    rate: 0.95,
+    pitch: 1.0,
+    volume: 1.0,
   },
 };
 
-// ====== BASE STORIES (RINGKAS DARI TEKS KAMU) ======
-
-const BASE_STORIES = {
-  biola_ikhlas: {
-    id: "biola_ikhlas",
-    title: "Biola Kiai Dahlan Memberi Jawaban (Ikhlas)",
-    text: `
-Biola Kiai Dahlan digunakan untuk menjawab pertanyaan muridnya tentang hakikat beragama. Dengan menggesek biola dan memainkan tembang Asmaradhana yang lembut, para santri merasakan keindahan, ketenangan, dan seolah beban mereka menghilang. Dari situ, Kiai Dahlan menjelaskan bahwa orang yang beragama dengan benar adalah orang yang merasakan kedamaian, mengayomi, dan menyelimuti sekitarnya.
-
-Ketika para santri mencoba menggesek biola sendiri, suara yang keluar menjadi menderit dan tidak nyaman didengar. Kiai Dahlan menganalogikan orang yang beragama tanpa ilmu dan keikhlasan sebagai orang yang memainkan biola tanpa belajar: alih-alih membawa ketenangan, justru menimbulkan ketidaknyamanan bagi diri dan lingkungan. Kisah ini menekankan pentingnya keikhlasan dan kesungguhan dalam belajar agama dan merawat kedamaian batin.
-    `.trim(),
-  },
-  budi_utomo: {
-    id: "budi_utomo",
-    title: "Belajar dari Budi Utomo (Rendah Hati)",
-    text: `
-Matahari sore di Kauman menjadi latar ketika Kiai Dahlan mendatangi langgar kidul. Di sana, Sudja bercerita bahwa beberapa santri dilarang keluarganya mengaji karena tidak setuju Kiai Dahlan bergabung dengan Budi Utomo dan memakai jas serta sepatu seperti orang Belanda. Mereka menilai organisasi itu terlalu dekat dengan budaya menari, bernyanyi, dan minum alkohol.
-
-Kiai Dahlan menjelaskan bahwa ia bergabung untuk belajar cara membangun organisasi yang bisa bermanfaat bagi umat. Ia menegaskan pentingnya hati yang terbuka, sesuai makna wahyu pertama “Iqra” – bacalah, telitilah, pelajarilah. Kerendahan hati untuk belajar dari berbagai sumber menjadi kunci untuk memperbaiki kehidupan umat, tanpa kehilangan prinsip dan nilai Islam.
-    `.trim(),
-  },
-  madrasah_welas_asih: {
-    id: "madrasah_welas_asih",
-    title: "Mendirikan Madrasah Ibtidaiyah Diniyah (Welas Asih)",
-    text: `
-Di rumahnya, Kiai Dahlan menata tiga pasang meja dan kursi serta memasang papan tulis dari kayu suren. Ia berniat mendirikan Madrasah Ibtidaiyah Diniyah. Murid-murid mempertanyakan langkah ini karena madrasah dianggap seharusnya seperti pesantren tradisional tanpa meja kursi, dan penggunaan meja kursi dikaitkan dengan sekolah Belanda.
-
-Alih-alih berdebat panjang, Kiai Dahlan mengajak murid-murid mencari anak-anak yang belum bersekolah untuk diajak belajar. Tindakan ini menunjukkan welas asih dan keberanian berinovasi demi mencerdaskan mereka yang tertinggal. Madrasah dengan meja dan kursi bukan sekadar meniru, melainkan sarana baru untuk menebar kasih sayang dan ilmu.
-    `.trim(),
-  },
-};
-
-function pickBaseStoryForTopic(topicId) {
-  switch (topicId) {
-    case "diri":
-      return BASE_STORIES.biola_ikhlas;
-    case "sosial":
-      return BASE_STORIES.budi_utomo;
-    case "alam":
-      return BASE_STORIES.madrasah_welas_asih;
-    default:
-      return BASE_STORIES.biola_ikhlas;
-  }
-}
-
-// ====== SESSION STORE (IN-MEMORY) ======
-
+// ====== SESSION STORE ======
 /**
  * session: {
  *   id: string
@@ -209,30 +77,50 @@ function getOrCreateSession(sessionIdFromClient) {
   return session;
 }
 
-// ====== SMALL HELPERS ======
+// ====== HELPERS: TTS WRAPPER (PAKAI GLOBAL CONFIG) ======
 
 async function withSpeech(session, messageObj) {
   const speechSource =
     messageObj.speechText || messageObj.message || messageObj.storyText;
 
-  const audio = await synthesizeSpeech(speechSource || "");
+  const mode = TTS_CONFIG.mode || "elevenlabs";
 
+  // Mode ELEVENLABS → backend generate audio
+  if (mode === "elevenlabs" && speechSource) {
+    const audio = await synthesizeSpeech(speechSource || "");
+
+    return {
+      ...messageObj,
+      sessionId: session.id,
+      tts: TTS_CONFIG,
+      audio: audio
+        ? {
+            enabled: true,
+            mimeType: audio.mimeType,
+            base64: audio.base64,
+          }
+        : {
+            enabled: false,
+            mimeType: null,
+            base64: null,
+          },
+    };
+  }
+
+  // Mode WEBSPEECH atau OFF → backend tidak generate audio
   return {
     ...messageObj,
     sessionId: session.id,
-    audio: audio
-      ? {
-          enabled: true,
-          mimeType: audio.mimeType,
-          base64: audio.base64,
-        }
-      : {
-        enabled: false,
-        mimeType: null,
-        base64: null,
-      },
+    tts: TTS_CONFIG,
+    audio: {
+      enabled: false,
+      mimeType: null,
+      base64: null,
+    },
   };
 }
+
+// ====== HELPERS: OPTIONS ======
 
 function topicToOptions() {
   return Object.values(TOPICS).map((t) => ({
@@ -255,8 +143,67 @@ function buildProblemOptions(topicId, alreadySelected) {
     }));
 }
 
+// AI rewrite untuk teks opsi (label & description) tapi ID tetap sama
+async function rewriteOptionsWithAI(simpleOptions, { mode, topic }) {
+  try {
+    const prompt = getOptionRewritePrompt(simpleOptions, {
+      mode,
+      topicLabel: topic?.label || null,
+    });
+
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Gunakan bahasa Indonesia yang hangat, lembut, dan terasa seperti teman yang peduli.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.7,
+    });
+
+    let raw = completion.choices?.[0]?.message?.content?.trim();
+    if (!raw) return simpleOptions;
+
+    const fenced = raw.match(/```json([\s\S]*?)```/i);
+    if (fenced) {
+      raw = fenced[1].trim();
+    }
+
+    const parsed = JSON.parse(raw);
+    const aiOptions = Array.isArray(parsed?.options)
+      ? parsed.options
+      : Array.isArray(parsed)
+      ? parsed
+      : [];
+
+    if (!aiOptions.length) return simpleOptions;
+
+    const byId = Object.fromEntries(simpleOptions.map((o) => [o.id, o]));
+
+    return aiOptions
+      .map((o) => {
+        const base = byId[o.id];
+        if (!base) return null;
+        return {
+          id: base.id,
+          label: o.label || base.label,
+          description: o.description || base.description,
+        };
+      })
+      .filter(Boolean);
+  } catch (err) {
+    console.error("[rewriteOptionsWithAI] gagal parse:", err);
+    return simpleOptions;
+  }
+}
+
+// ====== HELPERS: STORY ======
+
 async function buildPersonalizedStory({ topicId, selectedProblems }) {
-  const base = pickBaseStoryForTopic(topicId);
+  const baseStory = pickBaseStoryForTopic(topicId);
 
   const problemsText = selectedProblems
     .map((p) => {
@@ -269,26 +216,7 @@ async function buildPersonalizedStory({ topicId, selectedProblems }) {
     .filter(Boolean)
     .join("\n");
 
-  const prompt = `
-Kamu adalah konselor sekolah yang menggunakan teknik relaksasi berbasis cerita Kiai Ahmad Dahlan.
-
-Berikut cerita dasar:
-"""${base.text}"""
-
-Berikut adalah 3 masalah yang sedang dialami siswa:
-${problemsText}
-
-TUGAS:
-- Gabungkan cerita dasar dengan kondisi siswa.
-- Bahasa Indonesia, hangat, lembut, seperti konselor.
-- Struktur:
-  1. Pembukaan relaksasi singkat.
-  2. Masuk ke cerita Kiai Dahlan.
-  3. Kaitkan secara eksplisit dengan 3 masalah siswa.
-  4. Akhiri dengan afirmasi positif dan ajakan refleksi.
-
-Huruf rapi, paragraf tidak terlalu panjang.
-`;
+  const prompt = getStoryPrompt(baseStory.text, problemsText);
 
   const completion = await groq.chat.completions.create({
     model: GROQ_MODEL,
@@ -296,7 +224,7 @@ Huruf rapi, paragraf tidak terlalu panjang.
       {
         role: "system",
         content:
-          "Kamu adalah konselor sekolah yang empatik, berbahasa Indonesia yang halus, dan selalu menjaga sensitivitas siswa.",
+          "Gunakan bahasa Indonesia yang lembut dan empatik, seperti teman yang menemani proses refleksi.",
       },
       { role: "user", content: prompt },
     ],
@@ -305,68 +233,37 @@ Huruf rapi, paragraf tidak terlalu panjang.
 
   const storyText =
     completion.choices?.[0]?.message?.content?.trim() ||
-    base.text ||
+    baseStory.text ||
     "Maaf, cerita belum bisa dibuat saat ini.";
 
   return {
-    baseStory: base,
+    baseStory,
     storyText,
   };
 }
 
-/**
- * Bangun kalimat tanya + pembacaan opsi secara dinamis untuk state yang punya options.
- * mode: "topic" | "problem"
- */
-async function buildSpokenOptionsPrompt({ mode, topic, round, options, previousCount }) {
+// ====== HELPERS: SPOKEN OPTIONS TEXT ======
+
+async function buildSpokenOptionsPrompt({
+  mode,
+  topic,
+  round,
+  options,
+  previousCount,
+}) {
   const simpleOptions = options.map((o) => ({
     id: o.id,
     label: o.label,
     description: o.description,
   }));
 
-  let context = "";
-  if (mode === "topic") {
-    context = `
-Ini adalah tahap pemilihan area kedamaian awal.
-Siswa akan memilih salah satu area berikut sebagai fokus utama sesi:
-- Damai dengan Diri
-- Damai dengan Sosial
-- Damai dengan Alam
-`;
-  } else if (mode === "problem") {
-    context = `
-Ini adalah tahap penggalian masalah untuk topik "${topic?.label}".
-Saat ini sudah ada ${previousCount || 0} masalah yang dipilih.
-Sekarang konselor ingin menanyakan lagi, dari beberapa pilihan berikut, mana yang juga terasa dekat dengan kondisinya.
-Round: ${round}.
-`;
-  }
-
-  const prompt = `
-Kamu adalah konselor sekolah yang empatik dan berbahasa Indonesia halus.
-
-Konteks:
-${context}
-
-Berikut daftar opsi dalam bentuk JSON:
-${JSON.stringify(simpleOptions, null, 2)}
-
-TUGAS:
-- Buat satu teks yang akan DIBACAKAN dengan suara.
-- Gaya: lembut, Islami, nada tanya, seolah konselor sedang mengajak siswa merenung.
-- Sertakan pembukaan singkat yang hangat.
-- BACAKAN setiap opsi secara alami, misalnya:
-  "Kalau kamu lebih banyak merasa ..., itu biasanya masuk ke pilihan ...."
-  "Kalau yang terasa mengganggu adalah ..., maka itu termasuk ...."
-- Akhiri dengan pertanyaan yang jelas, misalnya:
-  "Menurutmu, dari semua pilihan tadi, mana yang paling terasa dekat denganmu sekarang?"
-- Jangan sebut kata 'JSON', 'opsi', 'id', atau istilah teknis.
-- Jangan menyuruh klik tombol, cukup pakai bahasa umum seperti "pilihan", "yang pertama", "yang kedua", dll.
-- Jangan menyebut diri sebagai AI atau sistem.
-
-Kembalikan HANYA teks yang akan dibacakan, tanpa penjelasan tambahan.
-`;
+  const prompt = getOptionsPrompt({
+    mode,
+    topicLabel: topic?.label || null,
+    round,
+    previousCount: previousCount || 0,
+    simpleOptions,
+  });
 
   const completion = await groq.chat.completions.create({
     model: GROQ_MODEL,
@@ -374,16 +271,24 @@ Kembalikan HANYA teks yang akan dibacakan, tanpa penjelasan tambahan.
       {
         role: "system",
         content:
-          "Kamu adalah konselor sekolah yang empatik, Islami, dan berbahasa Indonesia yang halus.",
+          "Gunakan bahasa Indonesia yang hangat dan reflektif, seperti teman yang mendengarkan dengan tulus.",
       },
       { role: "user", content: prompt },
     ],
     temperature: 0.7,
   });
 
-  const text =
+  let text =
     completion.choices?.[0]?.message?.content?.trim() ||
-    "Dari beberapa pilihan yang tersedia, silakan pilih mana yang paling terasa dekat denganmu saat ini.";
+    "Coba perhatikan lagi beberapa hal yang tadi muncul, lalu pilih mana yang paling terasa dekat dengan keadaanmu sekarang.";
+
+  // Safety: hilangkan salam kalau ada
+  text = text
+    .replace(
+      /^(assalamualaikum[^\w]*|halo[^\w]*|hai[^\w]*|hello[^\w]*|selamat\s+(pagi|siang|sore|malam)[^\w]*)/i,
+      ""
+    )
+    .trim();
 
   return text;
 }
@@ -395,22 +300,7 @@ async function handleGreeting(session) {
   session.topicId = null;
   session.selectedProblems = [];
 
-  // Greeting FULLY dinamis dari Groq, sekaligus menyebut 3 topik
-  const prompt = `
-Buat satu pesan pembuka konseling untuk siswa SMA dalam bahasa Indonesia yang lembut, Islami, dan menenangkan.
-
-Syarat:
-- Mulai dengan salam "Assalamualaikum".
-- Jelaskan bahwa ini adalah ruang aman untuk bercerita dan relaksasi.
-- Sebutkan secara eksplisit tiga area yang bisa dipilih:
-  1) "Damai dengan Diri"
-  2) "Damai dengan Sosial"
-  3) "Damai dengan Alam"
-- Ajak siswa untuk memilih salah satu area yang paling ingin ia fokuskan terlebih dahulu.
-- Gaya bahasa seperti konselor sekolah yang hangat dan tidak menggurui.
-- Jangan sebut diri sebagai AI atau sistem.
-- Teks 1–3 paragraf pendek, mudah dibacakan dengan suara pelan.
-`;
+  const prompt = getGreetingPrompt();
 
   const completion = await groq.chat.completions.create({
     model: GROQ_MODEL,
@@ -418,7 +308,7 @@ Syarat:
       {
         role: "system",
         content:
-          "Kamu adalah konselor sekolah yang empatik, Islami, dan berbahasa Indonesia yang halus.",
+          "Gunakan bahasa Indonesia yang lembut, Islami, dan empatik, seperti konselor yang membuat siswa merasa aman.",
       },
       { role: "user", content: prompt },
     ],
@@ -427,14 +317,20 @@ Syarat:
 
   const greetingMessage =
     completion.choices?.[0]?.message?.content?.trim() ||
-    "Assalamualaikum, terima kasih sudah datang. Di sini kamu boleh bercerita dengan tenang. Silakan pilih area yang ingin kamu fokuskan: Damai dengan Diri, Damai dengan Sosial, atau Damai dengan Alam.";
+    "Assalamualaikum, terima kasih sudah datang. Di sini kamu bisa berbagi cerita dengan tenang. Ada tiga hal yang bisa jadi fokus: damai dengan diri, damai dengan sosial, dan damai dengan alam. Kalau kamu perhatikan perasaanmu akhir-akhir ini, kira-kira yang mana yang paling dekat denganmu?";
+
+  const baseOptions = topicToOptions();
+  const aiOptions = await rewriteOptionsWithAI(baseOptions, {
+    mode: "topic",
+    topic: null,
+  });
 
   const message = {
     currentState: "identify_topic",
     type: "topic_selection",
     message: greetingMessage,
     speechText: greetingMessage,
-    options: topicToOptions(),
+    options: aiOptions,
   };
 
   return withSpeech(session, message);
@@ -443,12 +339,17 @@ Syarat:
 async function handleIdentifyTopic(session, payload) {
   const { topicId } = payload || {};
 
-  // Kalau belum ada / salah → tanya ulang pakai gaya dinamis + opsi dibacakan
+  // Kalau belum ada / salah → ulangi ajakan pilih topik
   if (!topicId || !TOPICS[topicId]) {
-    const options = topicToOptions();
+    const baseOptions = topicToOptions();
+    const aiOptions = await rewriteOptionsWithAI(baseOptions, {
+      mode: "topic",
+      topic: null,
+    });
+
     const spoken = await buildSpokenOptionsPrompt({
       mode: "topic",
-      options,
+      options: aiOptions,
       round: null,
       topic: null,
       previousCount: 0,
@@ -459,25 +360,30 @@ async function handleIdentifyTopic(session, payload) {
       type: "topic_selection",
       message: spoken,
       speechText: spoken,
-      options,
+      options: aiOptions,
     };
     return withSpeech(session, msg);
   }
 
-  // kalau valid → set topic dan lanjut ke collecting_problem (round 1)
+  // Kalau valid → set topic dan lanjut collecting_problem
   session.topicId = topicId;
   session.selectedProblems = [];
   session.state = "collecting_problem";
 
-  const options = buildProblemOptions(topicId, []);
-  const round = 1;
+  const baseProblemOptions = buildProblemOptions(topicId, []);
   const topic = TOPICS[topicId];
+  const round = 1;
+
+  const aiProblemOptions = await rewriteOptionsWithAI(baseProblemOptions, {
+    mode: "problem",
+    topic,
+  });
 
   const spoken = await buildSpokenOptionsPrompt({
     mode: "problem",
     topic,
     round,
-    options,
+    options: aiProblemOptions,
     previousCount: 0,
   });
 
@@ -487,7 +393,7 @@ async function handleIdentifyTopic(session, payload) {
     round,
     message: spoken,
     speechText: spoken,
-    options,
+    options: aiProblemOptions,
   };
 
   return withSpeech(session, message);
@@ -505,42 +411,55 @@ async function handleCollectingProblem(session, payload) {
   const topic = TOPICS[topicId];
   const validProblem = topic.problems.find((p) => p.id === problemId);
 
-  // Kalau problemId tidak valid → bacakan ulang opsi yang tersedia dengan nada tanya
+  // Kalau problemId tidak valid → ulangi round dengan opsi yang sama
   if (!validProblem) {
-    const options = buildProblemOptions(topicId, selectedProblems);
+    const baseOptions = buildProblemOptions(topicId, selectedProblems);
+    const aiOptions = await rewriteOptionsWithAI(baseOptions, {
+      mode: "problem",
+      topic,
+    });
+
+    const round = (selectedProblems.length || 0) + 1;
+
     const spoken = await buildSpokenOptionsPrompt({
       mode: "problem",
       topic,
-      round: (selectedProblems.length || 0) + 1,
-      options,
+      round,
+      options: aiOptions,
       previousCount: selectedProblems.length || 0,
     });
 
     const message = {
       currentState: "collecting_problem",
       type: "problem_selection",
-      round: (selectedProblems.length || 0) + 1,
+      round,
       message: spoken,
       speechText: spoken,
-      options,
+      options: aiOptions,
     };
     return withSpeech(session, message);
   }
 
+  // Simpan problem yang baru dipilih (tanpa duplikasi)
   if (!selectedProblems.includes(problemId)) {
     selectedProblems.push(problemId);
   }
 
-  // Kalau belum 3 problem → lanjut round berikutnya, dengan prompt dinamis
+  // Kalau belum 3 problem → lanjut round berikutnya
   if (selectedProblems.length < 3) {
     const round = selectedProblems.length + 1;
-    const options = buildProblemOptions(topicId, selectedProblems);
+    const baseOptions = buildProblemOptions(topicId, selectedProblems);
+
+    const aiOptions = await rewriteOptionsWithAI(baseOptions, {
+      mode: "problem",
+      topic,
+    });
 
     const spoken = await buildSpokenOptionsPrompt({
       mode: "problem",
       topic,
       round,
-      options,
+      options: aiOptions,
       previousCount: selectedProblems.length,
     });
 
@@ -550,7 +469,7 @@ async function handleCollectingProblem(session, payload) {
       round,
       message: spoken,
       speechText: spoken,
-      options,
+      options: aiOptions,
     };
 
     return withSpeech(session, message);
@@ -583,19 +502,16 @@ async function handleCollectingProblem(session, payload) {
   return withSpeech(session, message);
 }
 
-// OPTIONAL: restart session dengan topik yang sama
 async function handleRestartSession(session, payload) {
   const keepTopic = payload?.keepTopic ?? true;
 
   if (!keepTopic) {
-    // mulai benar-benar baru
     session.state = "greeting";
     session.topicId = null;
     session.selectedProblems = [];
     return handleGreeting(session);
   }
 
-  // restart dari awal collecting_problem dengan topic lama
   if (!session.topicId || !TOPICS[session.topicId]) {
     session.state = "identify_topic";
     return handleIdentifyTopic(session, {});
@@ -604,14 +520,19 @@ async function handleRestartSession(session, payload) {
   session.selectedProblems = [];
   session.state = "collecting_problem";
 
-  const options = buildProblemOptions(session.topicId, []);
+  const baseOptions = buildProblemOptions(session.topicId, []);
   const topic = TOPICS[session.topicId];
+
+  const aiOptions = await rewriteOptionsWithAI(baseOptions, {
+    mode: "problem",
+    topic,
+  });
 
   const spoken = await buildSpokenOptionsPrompt({
     mode: "problem",
     topic,
     round: 1,
-    options,
+    options: aiOptions,
     previousCount: 0,
   });
 
@@ -621,7 +542,7 @@ async function handleRestartSession(session, payload) {
     round: 1,
     message: spoken,
     speechText: spoken,
-    options,
+    options: aiOptions,
   };
 
   return withSpeech(session, message);
@@ -633,6 +554,124 @@ app.get("/health", (_, res) => {
   res.json({ status: "ok" });
 });
 
+// ====== GLOBAL TTS CONFIG ROUTES (ADMIN) ======
+
+// Lihat config TTS aktif
+app.get("/tts/config", (req, res) => {
+  res.json({
+    success: true,
+    config: TTS_CONFIG,
+  });
+});
+
+// Ubah config TTS (mode & optional webSpeechConfig)
+app.post("/tts/config", (req, res) => {
+  try {
+    const { mode, webSpeechConfig } = req.body || {};
+
+    const allowedModes = ["elevenlabs", "webspeech", "off"];
+
+    if (!mode || !allowedModes.includes(mode)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Field "mode" wajib diisi dengan salah satu dari: "elevenlabs", "webspeech", atau "off".',
+      });
+    }
+
+    TTS_CONFIG.mode = mode;
+
+    if (mode === "webspeech" && webSpeechConfig && typeof webSpeechConfig === "object") {
+      const { lang, rate, pitch, volume } = webSpeechConfig;
+      TTS_CONFIG.webSpeechConfig = {
+        lang: lang || "id-ID",
+        rate: typeof rate === "number" ? rate : 0.95,
+        pitch: typeof pitch === "number" ? pitch : 1.0,
+        volume: typeof volume === "number" ? volume : 1.0,
+      };
+    }
+
+    return res.json({
+      success: true,
+      message: "Konfigurasi TTS global berhasil diperbarui.",
+      config: TTS_CONFIG,
+    });
+  } catch (err) {
+    console.error("Error updating global TTS config:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan saat mengupdate konfigurasi TTS.",
+    });
+  }
+});
+
+// ====== SESSION ADMIN ROUTES ======
+
+// Hapus satu session
+app.delete("/sessions/:sessionId", (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: "sessionId wajib diisi pada path parameter.",
+      });
+    }
+
+    if (!sessions.has(sessionId)) {
+      return res.status(404).json({
+        success: false,
+        message: "Session tidak ditemukan atau sudah dihapus.",
+      });
+    }
+
+    sessions.delete(sessionId);
+
+    return res.json({
+      success: true,
+      message: "Session berhasil dihapus.",
+      sessionId,
+    });
+  } catch (err) {
+    console.error("Error deleting session:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan saat menghapus session.",
+    });
+  }
+});
+
+// Hapus semua session: DELETE /sessions?all=true
+app.delete("/sessions", (req, res) => {
+  try {
+    const { all } = req.query;
+
+    if (all !== "true") {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Jika ingin menghapus semua session, kirim query ?all=true pada endpoint ini.',
+      });
+    }
+
+    const count = sessions.size;
+    sessions.clear();
+
+    return res.json({
+      success: true,
+      message: `Semua session dihapus. Total sebelumnya: ${count}.`,
+    });
+  } catch (err) {
+    console.error("Error deleting all sessions:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan saat menghapus semua session.",
+    });
+  }
+});
+
+// ====== MAIN CHAT ROUTE ======
 app.post("/chat", async (req, res) => {
   try {
     const { sessionId, state, payload } = req.body || {};
@@ -654,14 +693,13 @@ app.post("/chat", async (req, res) => {
         response = await handleCollectingProblem(session, payload);
         break;
       case "story":
-        // replay simple info
         response = {
           sessionId: session.id,
           currentState: "story",
           message:
-            "Sesi cerita sudah selesai. Jika kamu ingin memulai sesi baru, kamu bisa memulai lagi dari awal.",
+            "Sesi cerita sudah selesai. Kalau suatu saat kamu ingin mulai lagi, kamu bisa memulainya dari awal kapan pun kamu siap.",
           speechText:
-            "Sesi cerita kita sudah selesai. Kalau kamu ingin memulai sesi baru, kamu bisa mulai lagi dari awal kapan saja.",
+            "Sesi cerita kita sudah selesai. Kalau suatu saat kamu ingin mulai lagi, kamu bisa memulainya dari awal kapan pun kamu siap.",
         };
         response = await withSpeech(session, response);
         break;

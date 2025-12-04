@@ -1,39 +1,30 @@
 // tts.js
 require("dotenv").config();
 
-// Ambil config dari .env
+const ENABLE_TTS = process.env.ENABLE_TTS === "false"; // 🔥 switch ON/OFF
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-
-// Boleh pakai salah satu:
-// ELEVENLABS_VOICE_ID_MAIN atau ELEVENLABS_VOICE_ID
 const ELEVENLABS_VOICE_ID =
   process.env.ELEVENLABS_VOICE_ID_MAIN || process.env.ELEVENLABS_VOICE_ID;
-
 const ELEVENLABS_MODEL_ID =
   process.env.ELEVENLABS_MODEL_ID || "eleven_multilingual_v2";
 
-// Pakai global fetch (Node 18+), kalau nggak ada fallback ke node-fetch
 let fetchFn = globalThis.fetch;
 if (!fetchFn) {
   fetchFn = (...args) =>
     import("node-fetch").then(({ default: f }) => f(...args));
 }
 
-/**
- * Generate speech dengan ElevenLabs dan kembalikan base64 MP3
- * @param {string} text
- * @returns {Promise<null | { mimeType: string, base64: string }>}
- */
 async function synthesizeSpeech(text) {
   try {
-    if (!text || !text.trim()) {
+    if (!ENABLE_TTS) {
+      console.log("[TTS] Disabled via ENV flag");
       return null;
     }
 
+    if (!text?.trim()) return null;
+
     if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
-      console.warn(
-        "[TTS] ELEVENLABS_API_KEY atau ELEVENLABS_VOICE_ID(_MAIN) belum di-set. Audio akan disabled."
-      );
+      console.warn("[TTS] Missing key or voice ID. Audio disabled.");
       return null;
     }
 
@@ -43,8 +34,8 @@ async function synthesizeSpeech(text) {
       text,
       model_id: ELEVENLABS_MODEL_ID,
       voice_settings: {
-        stability: 0.7,        // ✨ nada stabil, cocok buat konseling
-        similarity_boost: 0.9, // ✨ jaga karakter voice tetap konsisten
+        stability: 0.7,
+        similarity_boost: 0.9,
       },
     };
 
@@ -58,29 +49,19 @@ async function synthesizeSpeech(text) {
     });
 
     if (!res.ok) {
-      const textErr = await res.text().catch(() => "");
-      console.error(
-        "[TTS] ElevenLabs error:",
-        res.status,
-        textErr || res.statusText
-      );
+      console.error("[TTS] ElevenLabs error:", res.status);
       return null;
     }
 
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64 = buffer.toString("base64");
-
+    const buffer = Buffer.from(await res.arrayBuffer());
     return {
       mimeType: "audio/mpeg",
-      base64,
+      base64: buffer.toString("base64"),
     };
   } catch (err) {
-    console.error("[TTS] Failed to synthesize speech:", err);
+    console.error("[TTS] Failed:", err);
     return null;
   }
 }
 
-module.exports = {
-  synthesizeSpeech,
-};
+module.exports = { synthesizeSpeech };

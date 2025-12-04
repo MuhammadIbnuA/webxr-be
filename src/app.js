@@ -14,7 +14,7 @@ const { getOptionRewritePrompt } = require("../prompts/optionrewriteprompt");
 
 // DATA
 const { TOPICS } = require("../data/topics");
-const { pickBaseStoryForTopic } = require("../data/baseStories");
+const { pickBaseStoryForTopic } = require("../data/basestories");
 
 // ====== INIT ======
 const app = express();

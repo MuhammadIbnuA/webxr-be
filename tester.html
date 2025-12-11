@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Test Konseling LMNT (simple)</title>
+  <style>
+    body { font-family: system-ui, Roboto, Arial; max-width: 860px; margin: 28px auto; padding: 12px; }
+    h1 { font-size: 20px; margin-bottom: 6px; }
+    button { margin: 6px 6px 6px 0; padding: 8px 12px; cursor: pointer; }
+    .box { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-bottom: 12px; background: #fafafa; }
+    .options { margin-top: 8px; }
+    .log { white-space: pre-wrap; font-family: monospace; background: #111; color:#fff; padding:8px; max-height:220px; overflow:auto; border-radius:6px;}
+    .meta { color: #666; font-size: 13px; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <h1>Test Konseling AI — LMNT TTS (simple)</h1>
+
+  <div class="box">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="btn-set-lmnt">Set global TTS → LMNT</button>
+      <button id="btn-set-eleven">Set global TTS → ElevenLabs</button>
+      <button id="btn-set-webspeech">Set global TTS → WebSpeech</button>
+      <button id="btn-set-off">Set global TTS → Off</button>
+      <button id="btn-start">Start Greeting (create session)</button>
+      <button id="btn-restart">Restart (clear sessionId)</button>
+    </div>
+    <div class="meta">Server base: <code id="baseUrl">http://localhost:3000</code></div>
+    <div class="meta">SessionId (localStorage): <code id="sessionIdDisplay">-</code></div>
+  </div>
+
+  <div class="box">
+    <strong>Last response (message):</strong>
+    <div id="messageText" style="margin-top:8px"></div>
+
+    <div class="options" id="optionsArea"></div>
+
+    <div style="margin-top:12px;">
+      <strong>Audio / speech actions:</strong>
+      <div style="margin-top:6px">
+        <button id="btn-play-audio" disabled>Play latest audio</button>
+        <button id="btn-download-audio" disabled>Download latest audio</button>
+        <button id="btn-play-webspeech" disabled>Play via Web Speech (speechText)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="box">
+    <strong>Debug / logs</strong>
+    <div id="log" class="log"></div>
+  </div>
+
+<script>
+const baseUrl = document.getElementById('baseUrl').textContent.trim();
+const logEl = document.getElementById('log');
+const sessionIdDisplay = document.getElementById('sessionIdDisplay');
+
+function log(...args){ 
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent = `${t}  ${args.map(a=>typeof a==='object'?JSON.stringify(a,null,2):String(a)).join(' ')}\n` + logEl.textContent;
+}
+
+// helpers
+function getSessionId(){ return localStorage.getItem('konseling_sessionId'); }
+function setSessionId(id){
+  if(id) localStorage.setItem('konseling_sessionId', id);
+  else localStorage.removeItem('konseling_sessionId');
+  sessionIdDisplay.textContent = getSessionId() || '-';
+}
+
+// API: set global TTS mode
+async function setTTSMode(mode){
+  const body = { mode };
+  // if LMNT you can pass options (example)
+  if(mode === 'lmnt'){
+    body.lmnt = { voice: "", format: "mp3" };
+  }
+  if(mode === 'webspeech'){
+    body.webSpeechConfig = { lang: "id-ID", rate: 0.95, pitch: 1.0, volume: 1.0 };
+  }
+
+  const res = await fetch(`${baseUrl}/tts/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const j = await res.json();
+  log('setTTSMode', mode, j);
+  return j;
+}
+
+// API: chat
+async function apiChat(state, payload = {}){
+  const body = { state, payload };
+  const sessionId = getSessionId();
+  if(sessionId) body.sessionId = sessionId;
+
+  log('→ /chat', body);
+  const res = await fetch(`${baseUrl}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const j = await res.json();
+  log('← /chat', j);
+  // save session id if returned
+  if(j.sessionId) setSessionId(j.sessionId);
+  return j;
+}
+
+// UI handlers
+const messageText = document.getElementById('messageText');
+const optionsArea = document.getElementById('optionsArea');
+let latestAudio = null; // { mimeType, base64 }
+
+function renderResponse(resp){
+  messageText.textContent = resp.message || resp.storyText || resp.speechText || '';
+  optionsArea.innerHTML = '';
+  latestAudio = null;
+  document.getElementById('btn-play-audio').disabled = true;
+  document.getElementById('btn-download-audio').disabled = true;
+  document.getElementById('btn-play-webspeech').disabled = true;
+
+  if(Array.isArray(resp.options) && resp.options.length){
+    resp.options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.textContent = opt.label || (opt.id) ;
+      btn.title = opt.description || '';
+      btn.onclick = () => onOptionClick(resp.currentState, opt);
+      optionsArea.appendChild(btn);
+    });
+  }
+
+  // audio handling
+  if(resp.audio && resp.audio.enabled && resp.audio.base64){
+    latestAudio = { mimeType: resp.audio.mimeType, base64: resp.audio.base64 };
+    document.getElementById('btn-play-audio').disabled = false;
+    document.getElementById('btn-download-audio').disabled = false;
+    log('audio present, mime:', latestAudio.mimeType);
+  } else {
+    // allow webspeech play if server says use webspeech mode
+    if(resp.tts && resp.tts.mode === 'webspeech' && (resp.speechText || resp.message || resp.storyText)){
+      document.getElementById('btn-play-webspeech').disabled = false;
+    }
+  }
+}
+
+// option click mapping
+async function onOptionClick(currentState, opt){
+  // if topic selection
+  if(currentState === 'identify_topic'){
+    const resp = await apiChat('identify_topic', { topicId: opt.id });
+    renderResponse(resp);
+  } else if(currentState === 'collecting_problem'){
+    const resp = await apiChat('collecting_problem', { problemId: opt.id });
+    renderResponse(resp);
+  } else {
+    // fallback: send identify_topic with topicId if provided
+    const resp = await apiChat(currentState, {});
+    renderResponse(resp);
+  }
+}
+
+// audio play
+function playLatestAudio(){
+  if(!latestAudio) return;
+  const url = `data:${latestAudio.mimeType};base64,${latestAudio.base64}`;
+  const a = new Audio(url);
+  a.play().catch(e=>log('Audio play error', e));
+}
+
+// download audio
+function downloadLatestAudio(){
+  if(!latestAudio) return;
+  const blob = b64toBlob(latestAudio.base64, latestAudio.mimeType);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `konseling_audio.${latestAudio.mimeType.includes('wav')? 'wav' : 'mp3'}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// web speech
+function speakWebSpeech(text){
+  if(!("speechSynthesis" in window)){
+    alert('Browser tidak mendukung Web Speech API');
+    return;
+  }
+  const utter = new SpeechSynthesisUtterance(text);
+  // try to pick Indonesian voice
+  const voices = speechSynthesis.getVoices();
+  const v = voices.find(x => x.lang && x.lang.startsWith('id')) || voices.find(x=>x.lang && x.lang.startsWith('en'));
+  if(v) utter.voice = v;
+  utter.rate = 0.95;
+  utter.pitch = 1.0;
+  utter.volume = 1.0;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(utter);
+}
+
+// helper convert base64 -> blob
+function b64toBlob(b64Data, contentType='', sliceSize=512){
+  const byteCharacters = atob(b64Data);
+  const byteArrays = [];
+  for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+    const slice = byteCharacters.slice(offset, offset + sliceSize);
+    const byteNumbers = new Array(slice.length);
+    for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+    const byteArray = new Uint8Array(byteNumbers);
+    byteArrays.push(byteArray);
+  }
+  return new Blob(byteArrays, {type: contentType});
+}
+
+/* Buttons wiring */
+document.getElementById('btn-set-lmnt').onclick = async () => {
+  const r = await setTTSMode('lmnt');
+  alert('Set to LMNT: ' + (r.success ? 'OK' : JSON.stringify(r)));
+};
+
+document.getElementById('btn-set-eleven').onclick = async () => {
+  const r = await setTTSMode('elevenlabs');
+  alert('Set to ElevenLabs: ' + (r.success ? 'OK' : JSON.stringify(r)));
+};
+
+document.getElementById('btn-set-webspeech').onclick = async () => {
+  const r = await setTTSMode('webspeech');
+  alert('Set to WebSpeech: ' + (r.success ? 'OK' : JSON.stringify(r)));
+};
+
+document.getElementById('btn-set-off').onclick = async () => {
+  const r = await setTTSMode('off');
+  alert('Set to Off: ' + (r.success ? 'OK' : JSON.stringify(r)));
+};
+
+document.getElementById('btn-start').onclick = async () => {
+  const resp = await apiChat('greeting', {});
+  renderResponse(resp);
+};
+
+document.getElementById('btn-restart').onclick = () => {
+  setSessionId(null);
+  alert('sessionId cleared from localStorage');
+};
+
+document.getElementById('btn-play-audio').onclick = playLatestAudio;
+document.getElementById('btn-download-audio').onclick = downloadLatestAudio;
+document.getElementById('btn-play-webspeech').onclick = () => {
+  const txt = messageText.textContent || '';
+  if(txt) speakWebSpeech(txt);
+};
+
+(async function init(){
+  setSessionId(getSessionId()); // show existing
+  log('Ready. Ensure server running at', baseUrl);
+})();
+</script>
+</body>
+</html>

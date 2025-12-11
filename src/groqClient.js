@@ -2,6 +2,7 @@
 
 require("dotenv").config();
 const fetch = require("node-fetch"); // pastikan sudah ter-install
+const Groq = require("groq-sdk");
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL =
@@ -12,6 +13,11 @@ if (!GROQ_API_KEY) {
     "[WARN] GROQ_API_KEY belum di-set. Pastikan sudah diisi di file .env"
   );
 }
+
+// Groq SDK client instance
+const groq = new Groq({
+  apiKey: GROQ_API_KEY,
+});
 
 /**
  * Memanggil Groq Chat Completion dan mengembalikan hasil dalam bentuk JSON.
@@ -66,4 +72,4 @@ async function generateJsonCompletion(messages) {
   return parsed;
 }
 
-module.exports = { generateJsonCompletion };
+module.exports = { generateJsonCompletion, groq, GROQ_MODEL };

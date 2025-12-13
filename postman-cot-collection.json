@@ -1,0 +1,303 @@
+{
+    "info": {
+        "name": "WebXR Konseling AI - Chain of Thought",
+        "description": "Collection untuk testing Chain of Thought implementation",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "CoT Endpoints",
+            "item": [
+                {
+                    "name": "1. Greeting (CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": null,\n  \"state\": \"greeting\",\n  \"payload\": {}\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        },
+                        "description": "Start new session with Chain of Thought reasoning. Notice the more empathetic and natural greeting."
+                    }
+                },
+                {
+                    "name": "2. Select Topic - Diri (CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"identify_topic\",\n  \"payload\": {\n    \"topicId\": \"diri\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        },
+                        "description": "Select 'Damai dengan Diri' topic with CoT. Options will be rewritten with more empathetic language."
+                    }
+                },
+                {
+                    "name": "3. Problem 1 - Tekanan Akademik (CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"collecting_problem\",\n  \"payload\": {\n    \"problemId\": \"tekanan_kecemasan_akademik\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        },
+                        "description": "Select first problem. CoT will generate empathetic response."
+                    }
+                },
+                {
+                    "name": "4. Problem 2 - Krisis Identitas (CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"collecting_problem\",\n  \"payload\": {\n    \"problemId\": \"krisis_identitas_arah_hidup\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        },
+                        "description": "Select second problem. Notice SPECIFIC empathy for the first problem (Tekanan Akademik)."
+                    }
+                },
+                {
+                    "name": "5. Problem 3 - Media Sosial (CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"collecting_problem\",\n  \"payload\": {\n    \"problemId\": \"paparan_media_sosial\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        },
+                        "description": "Select third problem. This will trigger personalized story generation with deep CoT reasoning."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Comparison Tests",
+            "item": [
+                {
+                    "name": "Greeting - Original (No CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": null,\n  \"state\": \"greeting\",\n  \"payload\": {}\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat"
+                            ]
+                        },
+                        "description": "Original greeting without CoT for comparison"
+                    }
+                },
+                {
+                    "name": "Greeting - CoT",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": null,\n  \"state\": \"greeting\",\n  \"payload\": {}\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        },
+                        "description": "Greeting with CoT - compare the empathy and naturalness"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Other Topics (CoT)",
+            "item": [
+                {
+                    "name": "Select Topic - Sosial (CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"identify_topic\",\n  \"payload\": {\n    \"topicId\": \"sosial\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Select Topic - Alam (CoT)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"identify_topic\",\n  \"payload\": {\n    \"topicId\": \"alam\"\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/chat/cot",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "chat",
+                                "cot"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Restart Session (CoT)",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"state\": \"restart_session\",\n  \"payload\": {\n    \"keepTopic\": true\n  }\n}"
+                },
+                "url": {
+                    "raw": "{{baseUrl}}/chat/cot",
+                    "host": [
+                        "{{baseUrl}}"
+                    ],
+                    "path": [
+                        "chat",
+                        "cot"
+                    ]
+                },
+                "description": "Restart session while keeping the same topic"
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3000",
+            "type": "string"
+        },
+        {
+            "key": "sessionId",
+            "value": "",
+            "type": "string"
+        }
+    ]
+}

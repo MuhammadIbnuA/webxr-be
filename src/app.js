@@ -8,6 +8,7 @@ const healthRoutes = require("./routes/health.routes");
 const ttsRoutes = require("./routes/tts.routes");
 const sessionRoutes = require("./routes/session.routes");
 const chatRoutes = require("./routes/chat.routes");
+const chatCoTRoutes = require("./routes/chat-cot.routes");
 
 // Init
 const app = express();
@@ -22,6 +23,7 @@ app.use("/health", healthRoutes);
 app.use("/tts", ttsRoutes);
 app.use("/sessions", sessionRoutes);
 app.use("/chat", chatRoutes);
+app.use("/chat/cot", chatCoTRoutes); // Chain of Thought endpoint
 
 // Start server
 app.listen(PORT, () => {
